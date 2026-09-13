@@ -126,7 +126,7 @@ export class GitlabApiService {
     // burst of thousands of requests that GitLab rate-limited with a 429 — see #9034.
     return this._sendIssueRequestFirstPage$(
       {
-        url: `${this._apiLink(cfg)}/issues?search=${searchText}${this.getScopeParam(
+        url: `${this._apiLink(cfg)}/issues?search=${encodeURIComponent(searchText)}${this.getScopeParam(
           cfg,
         )}&order_by=updated_at${this.getCustomFilterParam(cfg)}`,
       },
