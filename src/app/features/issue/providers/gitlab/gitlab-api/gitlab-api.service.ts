@@ -69,7 +69,10 @@ export class GitlabApiService {
 
   private getCustomFilterParam(cfg: GitlabCfg): string {
     if (cfg.filter) {
-      return `&${cfg.filter}`;
+      // The filter is a raw query fragment (`key=val&key2=val2`), so only the
+      // fragment delimiter is escaped: a literal "#" (e.g. a `C#` label) would
+      // otherwise cut off every parameter after it (#10151).
+      return `&${cfg.filter.replace(/#/g, '%23')}`;
     } else {
       return '';
     }

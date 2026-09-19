@@ -136,6 +136,19 @@ describe('GitlabApiService', () => {
       req.flush([]);
     });
 
+    it('keeps a "#" in the custom filter from truncating the query (#10151)', () => {
+      service
+        .searchIssueInProject$('bug', { ...cfg, filter: 'labels=C#&state=opened' })
+        .subscribe();
+
+      const req = httpMock.expectOne(() => true);
+      const url = new URL(req.request.url);
+      expect(url.searchParams.get('labels')).toBe('C#');
+      expect(url.searchParams.get('state')).toBe('opened');
+      expect(url.searchParams.get('search')).toBe('bug');
+      req.flush([]);
+    });
+
     it('resolves to [] and sends no request when settings are invalid', () => {
       let result: SearchResultItem[] | undefined;
       let completed = false;
