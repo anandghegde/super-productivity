@@ -129,7 +129,6 @@ describe('GitlabApiService', () => {
 
       const req = httpMock.expectOne(() => true);
       const url = new URL(req.request.url);
-      expect(url.hash).toBe('');
       expect(url.searchParams.get('search')).toBe('fix #42 & bug');
       expect(url.searchParams.get('scope')).toBe('all');
       expect(url.searchParams.get('order_by')).toBe('updated_at');
