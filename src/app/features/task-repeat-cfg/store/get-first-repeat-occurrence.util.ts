@@ -15,8 +15,11 @@ import { isAfterRepeatUntilDay } from './repeat-until-day.util';
  * the first occurrence of the pattern. For WEEKLY this scans up to 7 days
  * from `startDate` until a day matches the enabled weekday mask.
  *
- * Returns `null` if the config is invalid or lacks a `startDate`; callers
- * are expected to fall back (typically to today or to `task.dueDay`).
+ * Returns `null` if the config is invalid or lacks a `startDate`, or if the
+ * first allowed occurrence already falls past `repeatUntilDay` (an empty
+ * finite window). Callers are expected to fall back (typically to today or
+ * to `task.dueDay`) — except for the empty window, which
+ * {@link hasNoRepeatOccurrenceBeforeEnd} lets them detect separately.
  *
  * @param taskRepeatCfg The repeat configuration
  * @returns The first valid occurrence date at noon, or null if none found
@@ -24,6 +27,19 @@ import { isAfterRepeatUntilDay } from './repeat-until-day.util';
 export const getFirstRepeatOccurrence = (taskRepeatCfg: TaskRepeatCfg): Date | null => {
   const first = getFirstRepeatOccurrenceIgnoringEnd(taskRepeatCfg);
   return first && isAfterRepeatUntilDay(taskRepeatCfg, first) ? null : first;
+};
+
+/**
+ * True when the cfg's finite window ([startDate, repeatUntilDay]) contains no
+ * allowed occurrence at all — e.g. a custom weekly cfg whose first enabled
+ * weekday already falls past the end day. Distinct from an invalid config
+ * (no/invalid startDate, unchecked weekdays), where falling back to today is
+ * still the intended behavior. Creation effects use this to preserve the
+ * task's existing day instead of anchoring it to today (#10091).
+ */
+export const hasNoRepeatOccurrenceBeforeEnd = (taskRepeatCfg: TaskRepeatCfg): boolean => {
+  const first = getFirstRepeatOccurrenceIgnoringEnd(taskRepeatCfg);
+  return !!first && isAfterRepeatUntilDay(taskRepeatCfg, first);
 };
 
 const getFirstRepeatOccurrenceIgnoringEnd = (

@@ -4218,4 +4218,81 @@ describe('TaskRepeatCfgEffects - Deterministic Date Scenarios', () => {
       expect(taskService.reScheduleTask).not.toHaveBeenCalled();
     });
   });
+
+  describe('Scenario: end day leaves no occurrence (empty window, #10091)', () => {
+    // Today is Wed 2025-01-15. The window is a single day — Thu 2025-01-30 —
+    // but the schedule is Monday-only, so the first allowed occurrence
+    // (Mon 2025-02-03) falls past the end day: the window is empty.
+    const emptyWindowCfg: TaskRepeatCfgCopy = {
+      ...baseRepeatCfg,
+      repeatCycle: 'WEEKLY',
+      repeatEvery: 1,
+      startDate: '2025-01-30',
+      repeatUntilDay: '2025-01-30',
+      monday: true,
+      tuesday: false,
+      wednesday: false,
+      thursday: false,
+      friday: false,
+      saturday: false,
+      sunday: false,
+    };
+
+    it('preserves the task day instead of falling back to today', () => {
+      const taskOnWindowDay: TaskWithSubTasks = {
+        ...baseTask,
+        dueDay: '2025-01-30',
+        subTasks: [],
+      };
+
+      const action = addTaskRepeatCfgToTask({
+        taskRepeatCfg: emptyWindowCfg,
+        taskId: 'test-task-id',
+      });
+
+      actions$ = of(action);
+      taskService.getByIdWithSubTaskData$.and.returnValue(of(taskOnWindowDay));
+      spyOn(effects as any, '_updateRegularTaskInstance');
+
+      let emitted = false;
+      effects.updateTaskAfterMakingItRepeatable$.subscribe(() => {
+        emitted = true;
+      });
+
+      expect(emitted).toBe(false); // nothing to plan
+      // The task keeps its day — no drag to today (2025-01-15)
+      expect(taskService.update).not.toHaveBeenCalled();
+      // The cfg keeps its anchor — lastTaskCreationDay must not become today
+      expect(taskRepeatCfgService.updateTaskRepeatCfg).toHaveBeenCalledTimes(1);
+      const cfgUpdate =
+        taskRepeatCfgService.updateTaskRepeatCfg.calls.mostRecent().args[1];
+      expect(Object.keys(cfgUpdate)).toEqual(['subTaskTemplates']);
+      // Dialog side effects (tags/notes sync) still apply
+      expect((effects as any)._updateRegularTaskInstance).toHaveBeenCalled();
+    });
+
+    it('does not schedule a timed task onto the empty window', () => {
+      testScheduler.run(({ hot, expectObservable }) => {
+        const timedCfg: TaskRepeatCfgCopy = {
+          ...emptyWindowCfg,
+          startTime: '10:00',
+          remindAt: TaskReminderOptionId.AtStart,
+        };
+
+        const action = addTaskRepeatCfgToTask({
+          taskRepeatCfg: timedCfg,
+          taskId: 'test-task-id',
+          startTime: '10:00',
+          remindAt: TaskReminderOptionId.AtStart,
+        });
+
+        actions$ = hot('-a', { a: action });
+        taskService.getByIdOnce$.and.returnValue(of(baseTask));
+
+        // No scheduleTaskWithTime: the Date.now() fallback would otherwise
+        // schedule the task for today despite the window never firing
+        expectObservable(effects.addRepeatCfgToTaskUpdateTask$).toBe('--');
+      });
+    });
+  });
 });

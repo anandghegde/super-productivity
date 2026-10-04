@@ -140,7 +140,11 @@ export const getNewestPossibleDueDate = (
       );
 
       if (today.getDate() < adjustedDayForCurrentMonth) {
-        // The repeat day hasn't occurred yet this month, so check previous month
+        // The repeat day hasn't occurred yet this month, so check previous
+        // month. Step back from day 1: setMonth on a day the previous month
+        // lacks overflows forward (Mar 30 → "Feb 30" → Mar 2), landing the
+        // scan back in the current month and past the capped end day (#10091).
+        checkDate.setDate(1);
         checkDate.setMonth(checkDate.getMonth() - 1);
       }
       setDateSafely(checkDate, dayOfMonthRepeat);
@@ -154,6 +158,8 @@ export const getNewestPossibleDueDate = (
         if (diffInMonth % taskRepeatCfg.repeatEvery === 0) {
           return checkDate;
         }
+        // Same day-1 guard as above for the in-loop month step
+        checkDate.setDate(1);
         checkDate.setMonth(checkDate.getMonth() - 1);
         setDateSafely(checkDate, dayOfMonthRepeat);
       }
