@@ -16,9 +16,11 @@ import { expectNoGlobalError } from '../../utils/assertions';
  *
  * The add-task bar runs its own async short-syntax parse and would often
  * dispatch the already-cleaned title, hiding the effect-level race. We hold
- * the lazy chrono date-parser module (imported by every short-syntax parse)
+ * the lazy date-parser module (imported on the first date-token parse)
  * until after the task is added, so the action carries the RAW title — the
- * exact input from the report.
+ * exact input from the report — and assert the raw title landed before
+ * letting the parse proceed. The hold matches the parser chunk by name in
+ * dev and falls back to same-origin lazy chunks for CI's built app.
  */
 type TaskSnapshot = {
   title: string;
@@ -124,7 +126,8 @@ test('auto-created issue excludes short syntax tokens (#10024)', async ({
     const isCreate =
       route.request().method() === 'POST' && /\/repos\/e2e\/repro\/issues\/?$/.test(url);
     if (isCreate) {
-      outgoingCreateTitle = (route.request().postDataJSON() as { title?: string })?.title;
+      outgoingCreateTitle =
+        (route.request().postDataJSON() as { title?: string })?.title ?? null;
       await createReleased;
       await route.fulfill({ json: mkIssue(cleanTitle) });
       return;
@@ -133,20 +136,6 @@ test('auto-created issue excludes short syntax tokens (#10024)', async ({
       json: url.includes('/search/issues') ? { items: [] } : mkIssue(cleanTitle),
     });
   });
-
-  // Hold chrono (see file comment) so the dispatched action carries the raw
-  // title. Registered late so nothing earlier can trip on it.
-  let releaseChrono!: () => void;
-  const chronoReleased = new Promise<void>((resolve): void => {
-    releaseChrono = resolve;
-  });
-  await page.route(
-    (url): boolean => url.href.includes('chrono-node'),
-    async (route) => {
-      await chronoReleased;
-      await route.continue();
-    },
-  );
 
   // Configure GitHub Issues with auto-create bound to the test project
   await page.locator('.e2e-toggle-issue-provider-panel').click();
@@ -167,11 +156,39 @@ test('auto-created issue excludes short syntax tokens (#10024)', async ({
   await expect(dialog).toBeHidden();
   await page.locator('.e2e-toggle-issue-provider-panel').click();
 
+  // Hold the date parser's lazy chunk (see file comment) so the dispatched
+  // action carries the raw title. CI serves the built app, whose lazy chunks
+  // are `chunk-<hash>.js`, so the parser cannot be matched by name there:
+  // hold every same-origin lazy-chunk request instead. Registered only once
+  // the provider dialog is closed — at that point the parser's chunk is the
+  // only dynamic import left to happen, because none of the setup titles
+  // carried date syntax to load it earlier.
+  let releaseChrono!: () => void;
+  const chronoReleased = new Promise<void>((resolve): void => {
+    releaseChrono = resolve;
+  });
+  const appOrigin = new URL(page.url()).origin;
+  await page.route(
+    (url): boolean =>
+      url.origin === appOrigin &&
+      (url.href.includes('chrono') || /(^|\/)chunk-[^/]+\.m?js$/.test(url.pathname)),
+    async (route) => {
+      await chronoReleased;
+      await route.continue();
+    },
+  );
+
   // The reported case: raw tokens in the title of an auto-created task
   const tomorrowBeforeAdd = await getTomorrowDbDate(page);
   await workViewPage.addTask('Write report #work @tomorrow', false, null);
-  // The raw title is on the action; let parsing proceed again so the
-  // short-syntax effect (and the fix's pre-create parse) run against it
+  // The hold must actually gate the parse — in dev AND built assets. If it
+  // did not, the add-task bar's parse would have dispatched the cleaned
+  // title and the rest would pass trivially, so prove the raw title is on
+  // the task before letting parsing proceed.
+  const rawTitle = `${testPrefix}-Write report #work @tomorrow`;
+  await expect
+    .poll(async () => (await getTaskSnapshot(page, cleanTitle))?.title ?? null)
+    .toBe(rawTitle);
   releaseChrono();
 
   // Short syntax lands locally while the create response is held — the exact
