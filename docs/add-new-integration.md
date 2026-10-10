@@ -29,7 +29,8 @@ A repository-owned provider normally lives under
 ```text
 <provider-name>/
 ├── package.json
-├── scripts/build.js
+├── tsconfig.json        # extends ../tsconfig.base.json
+├── i18n/
 ├── src/
 │   ├── manifest.json
 │   ├── plugin.ts
@@ -37,8 +38,19 @@ A repository-owned provider normally lives under
 └── *.spec.ts
 ```
 
-Keep provider API types and mapping logic inside the package. Do not add the
-provider to core issue-provider unions, defaults, forms, or Angular services.
+Set the package's build script to the shared builder,
+`"build": "node ../scripts/build-with-esbuild.js"`. It bundles `src/plugin.ts` into
+`dist/plugin.js` and copies `manifest.json`, `config-schema.json`, `icon.svg`
+and `i18n/*.json` when present; see
+[build-with-esbuild.js](../packages/plugin-dev/scripts/build-with-esbuild.js) for options.
+
+Keep provider API types and mapping logic inside the package. For the parts every
+provider repeats (auth headers, connection test, `t()`, done/text field mappings,
+sync value picking), import the helpers from
+[issue-provider-kit](../packages/plugin-dev/issue-provider-kit/index.ts) by
+relative path; they are bundled into the plugin, not part of the public plugin
+API. Do not add the provider to core issue-provider unions, defaults, forms, or
+Angular services.
 
 Minimal manifest:
 
