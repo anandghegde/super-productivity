@@ -13,6 +13,11 @@ const LIST = 'mention-list ul';
 const SLACK = 1;
 
 export default async ({ page, adb, ime, probe, StageError }) => {
+  // The emulator reports `pointer: fine` (the host mouse), so the app boots as
+  // a hybrid device in mouse mode. A real touch flips InputIntentService to
+  // touch, as a user's first tap would; calibrate's tap is real and swallowed.
+  await ime.calibrate();
+
   // Premise: on a real touch device InputIntentService sets this class, which
   // pins the global add-task bar to the bottom — the #5146 layout.
   const isTouchPrimary = await page.evaluate(() =>
@@ -31,7 +36,12 @@ export default async ({ page, adb, ime, probe, StageError }) => {
   await page.locator(INPUT).first().waitFor({ state: 'visible', timeout: 10_000 });
 
   const tap = await ime.tapAndOpen(INPUT);
-  await adb.text('test task @');
+  // Typed in one burst, Gboard is still composing the previous word when `@`
+  // arrives, and MentionDirective ignores composing keydowns. A pause after the
+  // space lets the composition end, so `@` lands as a plain keydown.
+  await adb.text('test task ');
+  await new Promise((r) => setTimeout(r, 800));
+  await adb.text('@');
 
   try {
     await page
